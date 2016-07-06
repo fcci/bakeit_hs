@@ -23,6 +23,10 @@ data OSType =
     | Os_win32
     deriving (Show, Eq)
 
+type LaunchFunction = (Either (String -> String) (String -> IO ProcessHandle))
+type LaunchResult = (Either String (IO ProcessHandle))
+type LaunchCmd = (Browser -> LaunchFunction)
+
 -- In MacOS
 -- * To open the default browser: "open $url"
 -- * To open a specific browser: "open -a $browser $url"
@@ -31,34 +35,42 @@ data OSType =
 -- In Windows
 -- * To open the default browser: "start link $url"
 --
-open :: String -> Either String (IO ProcessHandle)
+open :: String -> LaunchResult
 open url = open_browser Brw_default url
 
-open_browser :: Browser -> String -> Either String (IO ProcessHandle)
+open_browser :: Browser -> String -> LaunchResult
 open_browser b url =
     case os_type of
+         Just ost -> launch_browser ost b url
          Nothing  -> error $ "Unsupported OS: " ++ os
-         Just ost -> case lookup ost cmds of
-                          Just cmd -> case cmd b of
-                                           Right launch -> Right $ launch url
-                                           Left  err    -> Left $ err $ browser_name b
-                          Nothing  -> error $ "Internal error: no command for " ++ os_name ost
 
-cmds :: [(OSType, (Browser -> Either (String -> String) (String -> IO ProcessHandle)))]
+launch_browser :: OSType -> Browser -> String -> LaunchResult
+launch_browser ost b url =
+    case lookup ost cmds of
+         Just cmd -> launch_cmd cmd b url
+         Nothing  -> error $ "Internal error: no command for " ++ os_name ost
+
+launch_cmd :: LaunchCmd -> Browser -> String -> LaunchResult
+launch_cmd cmd b url =
+    case cmd b of
+         Right launch -> Right $ launch url
+         Left  err    -> Left $ err $ browser_name b
+
+cmds :: [(OSType, LaunchCmd)]
 cmds = [ (Os_macos, macos_cmd)
        , (Os_linux, linux_cmd)
        , (Os_win32, win32_cmd)
        ]
 
-macos_cmd :: Browser -> Either (String -> String) (String -> IO ProcessHandle)
+macos_cmd :: Browser -> LaunchFunction
 macos_cmd Brw_default = Right $ \url -> spawnCommand $ "open " ++ url
 macos_cmd _           = Right $ \url -> spawnCommand $ "open -a " ++ url
 
-linux_cmd :: Browser -> Either (String -> String) (String -> IO ProcessHandle)
+linux_cmd :: Browser -> LaunchFunction
 linux_cmd Brw_default = Right $ \url -> spawnCommand $ "xdg-open " ++ url
 linux_cmd _           = Left  $ \browser -> error $ error_default browser
 
-win32_cmd :: Browser -> Either (String -> String) (String -> IO ProcessHandle)
+win32_cmd :: Browser -> LaunchFunction
 win32_cmd Brw_default = Right $ \url -> spawnCommand $ "start_link " ++ url
 win32_cmd _           = Left  $ \browser -> error $ error_default browser
 
@@ -79,12 +91,17 @@ os_name os_t =
 
 browser_name :: Browser -> String
 browser_name b =
-    case b of
-        Brw_firefox           -> "Firefox"
-        Brw_internet_explorer -> "Internet Explorer"
-        Brw_chrome            -> "Google Chrome"
-        Brw_opera             -> "Opera"
-        Brw_safari            -> "Safari"
+    case lookup b browser_names of
+         Just s  -> s
+         Nothing -> error $ "Internal error: No browser name for " ++ (show b)
+
+browser_names :: [(Browser, String)]
+browser_names = [ (Brw_firefox          , "Firefox")
+                , (Brw_internet_explorer, "Internet Explorer")
+                , (Brw_chrome           , "Google Chrome")
+                , (Brw_opera            , "Opera")
+                , (Brw_safari           , "Safari")
+                ]
 
 error_default :: String -> String
 error_default b =

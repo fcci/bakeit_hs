@@ -1,10 +1,10 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Cmd
     (
       BakeitArgs(..)
     , bakeit_args
     ) where
-
-{-# LANGUAGE OverloadedStrings #-}
 
 import Options.Applicative
 

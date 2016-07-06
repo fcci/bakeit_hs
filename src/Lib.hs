@@ -1,8 +1,8 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Lib
     ( upload
     ) where
-
-{-# LANGUAGE OverloadedStrings #-}
 
 import Data.Aeson (Value)
 import qualified Data.ByteString.Lazy as L
@@ -10,19 +10,21 @@ import qualified Data.ByteString.Char8 as S8
 import qualified Data.ByteString.Lazy.Char8 as LS8
 import Data.CaseInsensitive ( CI )
 import qualified Data.CaseInsensitive as CI
-import qualified Data.Yaml as Yaml
+import qualified Data.Text as T
 import Network.HTTP.Simple
-import Cmd
-import WebBrowser
+import Network.HTTP.Types.Status
 import System.Process
 import GHC.IO.Exception
+import Cmd
+import WebBrowser
+import qualified PasteryJSON as PJ
 
 upload :: BakeitArgs -> IO ()
 upload (BakeitArgs {version = True}) = putStrLn "Version 0.1.0"
 upload args = do
+    let qps = qparams args
     raw_data <- L.readFile $ filename args
     request' <- parseRequest "POST https://www.pastery.net/api/paste/"
-    let qps = qparams args
     let request
             = setRequestQueryString qps
             $ setRequestBodyLBS raw_data
@@ -31,13 +33,16 @@ upload args = do
             $ setRequestPort 443
             $ request'
     response <- httpLBS request
-    putStrLn $ "The status code was: " ++
-               show (getResponseStatusCode response)
-    let upload_url = "https://www.haskell.org/hoogle/?hoogle=lookup"
-    LS8.putStrLn (getResponseBody response)
-    --putStrLn $ fromJSON upload_url
+    let upload_url = parse_upload_rsp response
     res <- maybe_launch_browser args upload_url
-    putStrLn "Done"
+    putStrLn $ "Paste URL: " ++ upload_url
+
+parse_upload_rsp :: Response L.ByteString -> String
+parse_upload_rsp response =
+    get_upload_url status body
+      where
+          status = getResponseStatus response
+          body = LS8.unpack $ getResponseBody response
 
 maybe_launch_browser :: BakeitArgs -> String -> IO ()
 maybe_launch_browser (BakeitArgs {Cmd.open_browser = True}) url =
@@ -62,4 +67,28 @@ qparams args =
                       ("max_views", show $ max_views args)
                       ]
             make_qp k v = (S8.pack k, Just $ S8.pack $ v)
+
+
+get_upload_url :: Status -> String -> String
+get_upload_url (Status{statusCode = sc, statusMessage = sm}) body
+    | sc >= 300 && sc < 400 =
+        error $ "Unexpected redirect: " ++ (show sc) ++ " " ++ (S8.unpack sm)
+    | sc == 413 =
+        error $ "The chosen file was rejected by the server " ++
+                "because it was too large, please try a smaller " ++
+                "file."
+    | sc == 422 =
+        error $ case PJ.parse_error body of
+                     Right json -> T.unpack $ PJ.error_msg json
+                     Left err -> err
+    | sc >= 400 && sc < 500 =
+        error $ "There was a problem with the request: " ++
+                (show sc) ++ " " ++ (S8.unpack sm)
+    | sc >= 500 =
+        error $ "There was a server error " ++ (show sc) ++
+                "; please try again later."
+    | otherwise =
+        case PJ.parse_return body of
+             Right json -> T.unpack $ PJ.url json
+             Left  err  -> error err
 
