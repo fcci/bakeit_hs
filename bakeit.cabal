@@ -19,17 +19,23 @@ library
                      , Cmd
                      , WebBrowser
                      , PasteryJSON
+                     , PasteryINI
   build-depends:       base >= 4.7 && < 5
                      , aeson
                      , bytestring
                      , case-insensitive
                      , containers
+                     , directory
+                     , filepath
                      , http-conduit
                      , http-types
+                     , ini
                      , optparse-applicative
                      , process
                      , text
+                     , text-format
                      , transformers
+                     , unordered-containers
                      , yaml
   default-language:    Haskell2010
 

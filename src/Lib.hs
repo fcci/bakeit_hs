@@ -18,11 +18,13 @@ import GHC.IO.Exception
 import Cmd
 import WebBrowser
 import qualified PasteryJSON as PJ
+import PasteryINI (get_api_key)
 
 upload :: BakeitArgs -> IO ()
 upload (BakeitArgs {version = True}) = putStrLn "Version 0.1.0"
 upload args = do
-    let qps = qparams args
+    api_key <- get_api_key
+    let qps = qparams args (T.unpack api_key)
     raw_data <- L.readFile $ filename args
     request' <- parseRequest "POST https://www.pastery.net/api/paste/"
     let request
@@ -58,10 +60,11 @@ req_hdrs =
             hdrs = [("Content-Type", "application/octet-stream"),
                     ("User-Agent", "Mozilla/5.0 (Haskell) bakeit library")]
 
-qparams :: BakeitArgs -> [(S8.ByteString, Maybe S8.ByteString)]
-qparams args =
+qparams :: BakeitArgs -> String -> [(S8.ByteString, Maybe S8.ByteString)]
+qparams args api_key =
     [make_qp k v | (k, v) <- fields]
-      where fields = [("title",     title args),
+      where fields = [("api_key",   api_key),
+                      ("title",     title args),
                       ("language",  lang args),
                       ("duration",  show $ duration args),
                       ("max_views", show $ max_views args)
